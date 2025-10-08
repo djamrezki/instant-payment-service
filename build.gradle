@@ -1,0 +1,65 @@
+plugins {
+    id 'org.springframework.boot' version "${springBootVersion}"
+    id 'io.spring.dependency-management' version '1.1.6'
+    id 'java'
+}
+
+group = 'com.example'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of((project.findProperty('javaVersion') ?: '21') as int)
+    }
+}
+
+dependencies {
+    // Core
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    implementation 'org.iban4j:iban4j:3.2.11-RELEASE'
+
+
+    // Kafka
+    implementation 'org.springframework.kafka:spring-kafka'
+
+    // DB
+    runtimeOnly "org.postgresql:postgresql:${postgresDriverVersion}"
+
+    // Testing
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation "org.testcontainers:junit-jupiter:${testcontainersVersion}"
+    testImplementation "org.testcontainers:postgresql:${testcontainersVersion}"
+    testImplementation "org.testcontainers:kafka:${testcontainersVersion}"
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events 'FAILED', 'SKIPPED', 'PASSED'
+        exceptionFormat 'full'
+        showStandardStreams = false
+    }
+    // Helpful defaults for Testcontainers
+    systemProperty 'junit.jupiter.execution.parallel.enabled', 'false'
+    // Enable reusable containers locally (requires ~/.testcontainers.properties)
+    // systemProperty 'testcontainers.reuse.enable', 'true'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+configurations.all {
+    // Fail fast on version conflicts outside Spring’s BOM
+    resolutionStrategy.failOnVersionConflict()
+}
+
+/*
+Notes:
+- Virtual threads: add `spring.threads.virtual.enabled=true` in application.properties (JDK 21+).
+- Testcontainers supplies Kafka & Postgres for integration tests.
+- Spring Boot BOM manages Spring Kafka & core versions; only pin driver/Testcontainers here.
+*/

@@ -1,0 +1,10 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost/test    # overridden by Testcontainers at runtime
+    username: test
+    password: test
+  kafka:
+    bootstrap-servers: localhost:9092        # overridden by KafkaContainer
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
