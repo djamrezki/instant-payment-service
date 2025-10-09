@@ -48,7 +48,7 @@ spring:
     producer:
       client-id: instant-payment-service
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
       acks: all
       enable-idempotence: true
       retries: 10

@@ -13,45 +13,55 @@ java {
     }
 }
 
+configurations.all {
+    exclude group: "org.scala-lang", module: "scala-library"
+    exclude group: "org.scala-lang", module: "scala-reflect"
+    // Also block broker artifacts if any transitive pulls them:
+    exclude group: "org.apache.kafka", module: "kafka_2.13"
+    exclude group: "org.apache.kafka", module: "kafka"
+}
+
 dependencyManagement {
     imports {
-        mavenBom "org.springframework.boot:spring-boot-dependencies:${springBootVersion}"
         mavenBom "org.springframework.modulith:spring-modulith-bom:${modulithVersion}"
+        mavenBom "org.testcontainers:testcontainers-bom:${testcontainersVersion}"
     }
 }
 
 dependencies {
     // Core
-    implementation 'org.springframework.boot:spring-boot-starter-web'
-    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation "org.springframework.boot:spring-boot-starter-web"
+    implementation "org.springframework.boot:spring-boot-starter-data-jpa"
+    implementation "org.springframework.boot:spring-boot-starter-validation"
 
-    implementation 'org.iban4j:iban4j:3.2.11-RELEASE'
+    implementation "org.iban4j:iban4j:3.2.11-RELEASE"
 
-
-    // Kafka
-    //implementation 'org.springframework.boot:spring-boot-starter-kafka'
+    // Kafka (use the starter so Boot manages everything consistently)
     implementation 'org.springframework.kafka:spring-kafka'
-
 
     // DB
     runtimeOnly "org.postgresql:postgresql:${postgresDriverVersion}"
 
-    //Spring Modulith
-    implementation "org.springframework.modulith:spring-modulith-starter-core"
-    implementation "org.springframework.modulith:spring-modulith-events-jpa"
-    implementation "org.springframework.modulith:spring-modulith-actuator"
+    // Spring Modulith (versions from BOM above)
+    implementation "org.springframework.modulith:spring-modulith-starter-jpa"
     implementation "org.springframework.modulith:spring-modulith-events-kafka"
+    implementation "org.springframework.kafka:spring-kafka"   // runtime publisher
+    implementation "org.springframework.modulith:spring-modulith-events-jackson"
+    implementation "org.springframework.kafka:spring-kafka"
 
-    //ShedLock
+    // ShedLock
     implementation "net.javacrumbs.shedlock:shedlock-spring:5.13.0"
     implementation "net.javacrumbs.shedlock:shedlock-provider-jdbc-template:5.13.0"
 
-    // Testing
-    testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    testImplementation "org.testcontainers:junit-jupiter:${testcontainersVersion}"
-    testImplementation "org.testcontainers:postgresql:${testcontainersVersion}"
-    testImplementation "org.testcontainers:kafka:${testcontainersVersion}"
+    // Testing (let Boot manage JUnit/Mockito versions)
+    testImplementation "org.springframework.boot:spring-boot-starter-test"
+    testImplementation "org.springframework.kafka:spring-kafka-test"
+
+    testImplementation "org.springframework.boot:spring-boot-testcontainers"
+
+    testImplementation "org.testcontainers:junit-jupiter"
+    testImplementation "org.testcontainers:postgresql"
+    testImplementation "org.testcontainers:kafka"
 }
 
 test {

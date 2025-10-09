@@ -6,5 +6,11 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Externalized
-public record PaymentCompletedEvent(UUID paymentId, String debtorIban, String creditorIban,
-                                    String currency, Instant confirmedAt) {}
+public record PaymentCompletedEvent(
+        UUID paymentId,
+        String debtorIban,
+        String creditorIban,
+        String currency,
+        String remittanceInfo,
+        Instant confirmedAt
+) {}

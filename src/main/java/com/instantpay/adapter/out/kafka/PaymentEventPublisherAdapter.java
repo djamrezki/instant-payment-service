@@ -21,21 +21,21 @@ public class PaymentEventPublisherAdapter implements PaymentEventPublisherPort {
 
     public void publishPaymentCreated(Payment p) {
         publisher.publishEvent(new PaymentCreatedEvent(
-                p.id(), p.debtorIban(), p.creditorIban(), p.currency(), Instant.now()
+                p.id(), p.debtorIban(), p.creditorIban(), p.currency(), p.remittanceInfo(),Instant.now()
         ));
     }
 
     @Override
     public void publishPaymentCompleted(Payment p) {
         publisher.publishEvent(new PaymentCompletedEvent(
-                p.id(), p.debtorIban(), p.creditorIban(), p.currency(), Instant.now()
+                p.id(), p.debtorIban(), p.creditorIban(), p.currency(), p.remittanceInfo(),Instant.now()
         ));
     }
 
     @Override
     public void publishPaymentFailed(Payment p, String reason) {
         publisher.publishEvent(new PaymentFailedEvent(
-                p.id(), p.debtorIban(), p.creditorIban(), p.currency(), reason, Instant.now()
+                p.id(), p.debtorIban(), p.creditorIban(), p.currency(), reason, p.remittanceInfo(), Instant.now()
         ));
     }
 }

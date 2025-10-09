@@ -6,5 +6,12 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Externalized
-public record PaymentFailedEvent(UUID paymentId, String debtorIban, String creditorIban,
-                                 String currency, String reason, Instant failedAt) {}
+public record PaymentFailedEvent(
+        UUID paymentId,
+        String debtorIban,
+        String creditorIban,
+        String currency,
+        String remittanceInfo,
+        String reason,
+        Instant failedAt
+) {}
