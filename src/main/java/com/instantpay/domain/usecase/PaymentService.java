@@ -5,10 +5,7 @@ import com.instantpay.domain.model.Payment;
 import com.instantpay.domain.model.PaymentStatus;
 import com.instantpay.domain.model.Transaction;
 import com.instantpay.domain.port.in.SendPaymentUseCase;
-import com.instantpay.domain.port.out.AccountRepositoryPort;
-import com.instantpay.domain.port.out.OutboxRepositoryPort;
-import com.instantpay.domain.port.out.PaymentRepositoryPort;
-import com.instantpay.domain.port.out.TransactionRepositoryPort;
+import com.instantpay.domain.port.out.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,18 +19,21 @@ public class PaymentService implements SendPaymentUseCase {
     private final AccountRepositoryPort accountRepo;
     private final TransactionRepositoryPort txRepo;
     private final OutboxRepositoryPort outboxRepo;
+    private final PaymentEventPublisherPort publisherPort;
     private final Clock clock;
 
     public PaymentService(PaymentRepositoryPort paymentRepo,
                           AccountRepositoryPort accountRepo,
                           TransactionRepositoryPort txRepo,
                           OutboxRepositoryPort outboxRepo,
+                          PaymentEventPublisherPort publisherPort,
                           Clock clock) {
         this.paymentRepo = paymentRepo;
         this.accountRepo = accountRepo;
         this.txRepo = txRepo;
         this.outboxRepo = outboxRepo;
         this.clock = clock;
+        this.publisherPort = publisherPort;
     }
 
     @Override
@@ -65,6 +65,9 @@ public class PaymentService implements SendPaymentUseCase {
             return new Result(again.id(), again.status(), "Idempotent replay");
         }
 
+        // Publish CREATED (externalized after tx commits)
+        publisherPort.publishPaymentCreated(payment);
+
         // 3) Deterministic locking order (avoid deadlocks)
         var debtorIban = cmd.debtorIban();
         var creditorIban = cmd.creditorIban();
@@ -84,6 +87,7 @@ public class PaymentService implements SendPaymentUseCase {
         if (from.balance().compareTo(cmd.amount()) < 0) {
             payment = payment.failed("INSUFFICIENT_FUNDS", clock);
             paymentRepo.save(payment);
+            publisherPort.publishPaymentFailed(payment, "INSUFFICIENT_FUNDS");
             return new Result(payment.id(), payment.status(), "Insufficient funds");
         }
 
@@ -101,8 +105,8 @@ public class PaymentService implements SendPaymentUseCase {
         payment = payment.completed(clock);
         paymentRepo.save(payment);
 
-        // 7) Outbox event
-        outboxRepo.save(OutboxEvent.paymentCompleted(payment, Instant.now(clock)));
+        // 7) Publish domain event via Modulith (instead of writing into your outbox table)
+        publisherPort.publishPaymentCompleted(payment);
 
         return new Result(payment.id(), payment.status(), "Payment completed");
     }

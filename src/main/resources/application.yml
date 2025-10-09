@@ -1,6 +1,18 @@
 spring:
   application:
     name: instant-payment-service
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+  task:
+    scheduling:
+      pool:
+        size: 1
+
+  modulith:
+    events:
+      republish-outstanding-events-on-restart: false
+      completion-mode: DELETE
 
   threads:
     virtual:
@@ -25,6 +37,11 @@ spring:
     show-sql: true
     open-in-view: false
 
+  sql:
+    init:
+      mode: always
+      platform: postgres
+
   kafka:
     bootstrap-servers: localhost:9092
     consumer:
@@ -45,8 +62,20 @@ logging:
 
 server:
   port: 8080
+  shutdown: graceful
 
 app:
   kafka:
     topics:
       payments: payments.events
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true

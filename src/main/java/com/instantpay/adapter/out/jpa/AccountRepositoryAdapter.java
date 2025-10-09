@@ -1,6 +1,6 @@
 package com.instantpay.adapter.out.jpa;
 
-import com.instantpay.adapter.out.mapper.AccountJpaMapper;
+import com.instantpay.adapter.out.jpa.mapper.AccountJpaMapper;
 import com.instantpay.domain.model.Account;
 import com.instantpay.domain.port.out.AccountRepositoryPort;
 import org.springframework.stereotype.Component;

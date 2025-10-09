@@ -1,34 +1,41 @@
 package com.instantpay.adapter.out.kafka;
 
+import com.instantpay.domain.event.PaymentCompletedEvent;
+import com.instantpay.domain.event.PaymentCreatedEvent;
+import com.instantpay.domain.event.PaymentFailedEvent;
 import com.instantpay.domain.model.Payment;
 import com.instantpay.domain.port.out.PaymentEventPublisherPort;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
+
+import java.time.Instant;
 
 @Component
 public class PaymentEventPublisherAdapter implements PaymentEventPublisherPort {
 
-    private final KafkaTemplate<String, String> template;
-    private final String topic;
+    private final ApplicationEventPublisher publisher;
 
-    public PaymentEventPublisherAdapter(
-            KafkaTemplate<String, String> template,
-            @Value("${app.kafka.topics.payments:payments.events}") String topic) {
-        this.template = template;
-        this.topic = topic;
+    public PaymentEventPublisherAdapter(ApplicationEventPublisher publisher) {
+        this.publisher = publisher;
     }
 
-    @Override
     public void publishPaymentCreated(Payment p) {
-        template.send(topic, p.id().toString(), "PAYMENT_CREATED");
+        publisher.publishEvent(new PaymentCreatedEvent(
+                p.id(), p.debtorIban(), p.creditorIban(), p.currency(), Instant.now()
+        ));
     }
+
     @Override
-    public void publishPaymentConfirmed(Payment p) {
-        template.send(topic, p.id().toString(), "PAYMENT_CONFIRMED");
+    public void publishPaymentCompleted(Payment p) {
+        publisher.publishEvent(new PaymentCompletedEvent(
+                p.id(), p.debtorIban(), p.creditorIban(), p.currency(), Instant.now()
+        ));
     }
+
     @Override
-    public void publishPaymentFailed(Payment p) {
-        template.send(topic, p.id().toString(), "PAYMENT_FAILED");
+    public void publishPaymentFailed(Payment p, String reason) {
+        publisher.publishEvent(new PaymentFailedEvent(
+                p.id(), p.debtorIban(), p.creditorIban(), p.currency(), reason, Instant.now()
+        ));
     }
 }
