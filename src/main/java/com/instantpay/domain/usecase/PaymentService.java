@@ -1,6 +1,5 @@
 package com.instantpay.domain.usecase;
 
-import com.instantpay.domain.model.OutboxEvent;
 import com.instantpay.domain.model.Payment;
 import com.instantpay.domain.model.PaymentStatus;
 import com.instantpay.domain.model.Transaction;
@@ -18,20 +17,17 @@ public class PaymentService implements SendPaymentUseCase {
     private final PaymentRepositoryPort paymentRepo;
     private final AccountRepositoryPort accountRepo;
     private final TransactionRepositoryPort txRepo;
-    private final OutboxRepositoryPort outboxRepo;
     private final PaymentEventPublisherPort publisherPort;
     private final Clock clock;
 
     public PaymentService(PaymentRepositoryPort paymentRepo,
                           AccountRepositoryPort accountRepo,
                           TransactionRepositoryPort txRepo,
-                          OutboxRepositoryPort outboxRepo,
                           PaymentEventPublisherPort publisherPort,
                           Clock clock) {
         this.paymentRepo = paymentRepo;
         this.accountRepo = accountRepo;
         this.txRepo = txRepo;
-        this.outboxRepo = outboxRepo;
         this.clock = clock;
         this.publisherPort = publisherPort;
     }

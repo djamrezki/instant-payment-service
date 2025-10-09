@@ -43,15 +43,19 @@ spring:
       platform: postgres
 
   kafka:
-    bootstrap-servers: localhost:9092
-    consumer:
-      group-id: instant-payment-service
-      auto-offset-reset: earliest
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
     producer:
+      client-id: instant-payment-service
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      enable-idempotence: true
+      retries: 10
+      properties:
+        request.timeout.ms: 10000
+        delivery.timeout.ms: 30000
+        max.in.flight.requests.per.connection: 1
 
 logging:
   level:
