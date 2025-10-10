@@ -1,0 +1,112 @@
+openapi: 3.1.0
+info:
+  title: Instant Payment API
+  version: 1.0.0
+  description: |
+    REST API for initiating internal CHF instant transfers between Alpian accounts.
+    Implements idempotent POST operations and event-driven processing.
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/payments:
+    post:
+      summary: Send an instant CHF payment
+      operationId: sendPayment
+      tags:
+        - Payments
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Unique key ensuring idempotency of payment requests.
+          schema:
+            type: string
+        - name: X-Request-Id
+          in: header
+          required: false
+          description: Optional correlation identifier for tracing (overrides generated trace ID).
+          schema:
+            type: string
+      requestBody:
+        required: true
+        description: Payment details to initiate a transfer.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendPaymentRequest'
+      responses:
+        "201":
+          description: Payment processed instantly and completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        "202":
+          description: Payment accepted and queued for processing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        "422":
+          description: Payment request failed due to validation or business rules.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        "400":
+          description: Invalid request payload.
+        "500":
+          description: Internal server error.
+  /api/payments/health:
+    get:
+      summary: Health check
+      operationId: health
+      tags:
+        - System
+      responses:
+        "200":
+          description: Service is up and running.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: OK
+components:
+  schemas:
+    SendPaymentRequest:
+      type: object
+      required:
+        - debtorIban
+        - creditorIban
+        - amount
+      properties:
+        debtorIban:
+          type: string
+          example: CH9300762011623852957
+          description: IBAN of the account to debit.
+        creditorIban:
+          type: string
+          example: CH2801234000123456789
+          description: IBAN of the account to credit.
+        amount:
+          type: number
+          format: double
+          example: 250.00
+          description: Amount to transfer in CHF.
+        remittanceInfo:
+          type: string
+          example: "Invoice #2025-001 payment"
+          description: Optional message or payment reference.
+    PaymentResponse:
+      type: object
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+          example: c43f25a2-4c2a-4de3-b0e7-901e79d5a812
+        status:
+          type: string
+          enum: [CREATED, COMPLETED, FAILED]
+        message:
+          type: string
+          example: "Payment completed successfully."
