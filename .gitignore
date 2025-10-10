@@ -14,19 +14,7 @@ gradle-app.setting
 *.iws
 out/
 
-# IntelliJ local history & indexes
-.idea/**/workspace.xml
-.idea/**/tasks.xml
-.idea/**/dictionaries
-.idea/**/shelf/
-.idea/**/httpRequests/
-.idea/**/dataSources/
-.idea/**/dataSources.local.xml
 
-# User-specific files
-.idea/**/gradle.xml
-.idea/**/libraries/
-.idea/**/modules.xml
 
 ### macOS ###
 .DS_Store
@@ -48,12 +36,6 @@ $RECYCLE.BIN/
 logs/
 **/tmp/
 **/temp/
-
-### JetBrains caches (optional, safe to ignore) ###
-.idea/caches/
-.idea/compiler.xml
-.idea/sonarlint/
-.idea/**/usage.statistics.xml
 
 ### Java ###
 *.class
