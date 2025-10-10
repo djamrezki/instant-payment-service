@@ -86,9 +86,249 @@ configurations.all {
     resolutionStrategy.failOnVersionConflict()
 }
 
-/*
-Notes:
-- Virtual threads: add `spring.threads.virtual.enabled=true` in application.properties (JDK 21+).
-- Testcontainers supplies Kafka & Postgres for integration tests.
-- Spring Boot BOM manages Spring Kafka & core versions; only pin driver/Testcontainers here.
-*/
+
+/***************DEMO FACILITIES*******************/
+
+import groovy.sql.Sql
+import org.codehaus.groovy.runtime.GStringImpl
+
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.time.Duration
+
+// --- helper: env > -Pprop > default ---
+ext.cfg = { String prop, String env, String defVal ->
+    def v = System.getenv(env)
+    if (!v) v = project.findProperty(prop)?.toString()
+    v ?: defVal
+}
+
+ext {
+    // --- Compose & infra config ---
+    composeFile = "${rootDir}/infra/local/docker-compose.yml" as GStringImpl
+    composeCmd  = "docker compose -f ${composeFile}" as GStringImpl
+
+    // DB
+    dbHost = cfg('dbHost', 'DB_HOST', 'localhost')
+    dbPort = cfg('dbPort', 'DB_PORT', '5432')
+    dbName = cfg('dbName', 'DB_NAME', 'instantpay')
+    dbUser = cfg('dbUser', 'DB_USER', 'postgres')
+    dbPass = cfg('dbPass', 'DB_PASS', 'postgres')
+
+    // Kafka
+    kafkaTopicName = cfg('kafkaTopicName', 'KAFKA_TOPIC', 'payments.events')
+    kafkaService = "redpanda"
+
+    // App
+    appBaseUrl = cfg('appBaseUrl', 'APP_BASE_URL', 'http://localhost:8080')
+
+    // Feature switches
+    useLocalPostgres = cfg('useLocalPostgres', 'USE_LOCAL_POSTGRES', 'false').toBoolean()
+
+    // Demo IBANs
+    demoDebtor   = cfg('demoDebtor', 'DEMO_DEBTOR', 'CH9300762011623852957')
+    demoCreditor = cfg('demoCreditor', 'DEMO_CREDITOR', 'CH2801234000123456789')
+}
+
+tasks.register('composeUp', Exec) {
+    group = 'local'
+    description = 'Start Kafka (+ Postgres if not using local) using docker-compose'
+    commandLine 'bash', '-lc', """
+      ${composeCmd} up -d ${useLocalPostgres ? '' : '--profile with-db'}
+      # Wait briefly so healthchecks settle (compose has healthchecks but we also pause a bit)
+      sleep 2
+    """.stripIndent()
+}
+
+tasks.register('composeDown', Exec) {
+    group = 'local'
+    description = 'Stop and remove compose stack'
+    commandLine 'bash', '-lc', """
+      ${composeCmd} down -v || true
+    """.stripIndent()
+}
+
+tasks.register('kafkaTopic', Exec) {
+    group = 'local'
+    description = "Create '${kafkaTopicName}' topic if missing"
+    dependsOn 'composeUp'
+    commandLine 'bash', '-lc', """
+      ${composeCmd} exec -T ${kafkaService} rpk topic create ${kafkaTopicName} -p 3 -r 1 >/dev/null 2>&1 || true
+      ${composeCmd} exec -T ${kafkaService} rpk topic list | grep -q '^${kafkaTopicName}' || { echo 'Topic not found'; exit 1; }
+      echo 'Kafka topic ${kafkaTopicName} OK'
+    """.stripIndent()
+}
+
+configurations {
+    seedRuntime
+}
+dependencies {
+    seedRuntime "org.postgresql:postgresql:42.7.3"
+}
+
+tasks.register('seedDb') {
+    group = 'local'
+    description = 'Seed two CHF accounts if missing (via JDBC)'
+    dependsOn 'composeUp' // compose exposes Postgres on localhost:5432
+
+    // --- Capture everything at configuration time ---
+    // values from ext{}
+    final String dbHostVal       = dbHost
+    final String dbPortVal       = dbPort
+    final String dbNameVal       = dbName
+    final String dbUserVal       = dbUser
+    final String dbPassVal       = dbPass
+    final String demoDebtorVal   = demoDebtor
+    final String demoCreditorVal = demoCreditor
+
+    // resolve classpath now (also config-cache friendly)
+    final Set<File> seedCp = configurations.seedRuntime.files
+
+    // declare inputs for cacheability
+    inputs.properties([
+            dbHost: dbHostVal,
+            dbPort: dbPortVal,
+            dbName: dbNameVal,
+            dbUser: dbUserVal,
+            dbPass: dbPassVal,
+            demoDebtor: demoDebtorVal,
+            demoCreditor: demoCreditorVal
+    ])
+    inputs.files(seedCp).withPathSensitivity(PathSensitivity.RELATIVE)
+
+    doLast {
+        def url = "jdbc:postgresql://${dbHostVal}:${dbPortVal}/${dbNameVal}"
+        Set<File> cp = seedCp
+        assert !cp.empty : "seedRuntime classpath is empty – check the dependency."
+
+        // Use current TCCL as parent so java.sql classes are visible
+        ClassLoader parent = Thread.currentThread().contextClassLoader
+        URLClassLoader cl = new URLClassLoader(cp.collect { it.toURI().toURL() } as URL[], parent)
+
+        Thread t = Thread.currentThread()
+        def prev = t.contextClassLoader
+        t.contextClassLoader = cl
+        try {
+            // Create a JDBC connection using the driver instance (no DriverManager / no cast)
+            def drvClass = Class.forName("org.postgresql.Driver", true, cl)
+            def drv = drvClass.getDeclaredConstructor().newInstance()
+            def props = new Properties()
+            props.setProperty("user", dbUserVal)
+            props.setProperty("password", dbPassVal)
+
+            def conn = drv.connect(url, props)
+            assert conn != null : "Driver.connect returned null. Is URL correct and Postgres reachable? -> ${url}"
+
+            Sql sql = new Sql(conn)
+
+            // Ensure pgcrypto before table (gen_random_uuid depends on it)
+            try { sql.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto") } catch (Throwable ignored) {}
+
+            sql.execute("""
+          CREATE TABLE IF NOT EXISTS accounts (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            iban VARCHAR(34) UNIQUE NOT NULL,
+            balance NUMERIC(19,2) NOT NULL,
+            version INT NOT NULL DEFAULT 0
+          )
+        """)
+
+            def upsert = { iban, balance ->
+                def r = sql.firstRow("SELECT 1 FROM accounts WHERE iban = ${iban}")
+                if (!r) {
+                    sql.execute("INSERT INTO accounts (id, iban, balance, version) VALUES (gen_random_uuid(), ${iban}, ${balance}, 0)")
+                    println "Inserted ${iban} (balance ${balance})"
+                } else {
+                    println "Account ${iban} already exists"
+                }
+            }
+
+            upsert(demoDebtorVal, 100000.00)
+            upsert(demoCreditorVal, 0.00)
+            sql.close()
+            conn.close()
+        } finally {
+            t.contextClassLoader = prev
+            try { cl.close() } catch (ignored) {}
+        }
+    }
+}
+
+
+tasks.register('infraUp') {
+    group = 'local'
+    description = 'Start compose, create topic, seed DB'
+    dependsOn 'composeUp', 'kafkaTopic', 'seedDb'
+}
+
+tasks.register('consumeEvents', Exec) {
+    group = 'local'
+    description = 'Tail Kafka events from payments.events'
+    dependsOn 'composeUp', 'kafkaTopic'
+
+    // Capture at configuration time
+    final String composeCmdVal     = composeCmd
+    final String kafkaServiceVal   = kafkaService
+    final String kafkaTopicNameVal = kafkaTopicName
+
+    commandLine 'bash', '-lc', """
+      echo 'Ctrl+C to stop'
+      ${composeCmdVal} exec -it ${kafkaServiceVal} rpk topic consume ${kafkaTopicNameVal} -f 'key=%k value=%v'
+    """.stripIndent()
+}
+
+
+tasks.register('infraDown') {
+    group = 'local'
+    description = 'Tear down compose stack'
+    dependsOn 'composeDown'
+}
+
+tasks.register('demo') {
+    group = 'local'
+    description = 'Health check + POST a sample payment (app must be running on :8080)'
+
+    // Capture project/ext values at configuration time
+    final String appBaseUrlVal   = appBaseUrl
+    final String demoDebtorVal   = demoDebtor
+    final String demoCreditorVal = demoCreditor
+
+    doLast {
+        def client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build()
+
+        // Health
+        def healthReq = HttpRequest.newBuilder()
+                .uri(new URI("${appBaseUrlVal}/api/payments/health"))
+                .timeout(Duration.ofSeconds(3))
+                .GET().build()
+        def healthRes = client.send(healthReq, HttpResponse.BodyHandlers.ofString())
+        println "Health: ${healthRes.statusCode()} ${healthRes.body()}"
+
+        // Send payment
+        def body = """
+        {
+          "debtorIban": "${demoDebtorVal}",
+          "creditorIban": "${demoCreditorVal}",
+          "currency": "CHF",
+          "amount": 42.50,
+          "remittanceInfo": "Gradle demo"
+        }
+        """.stripIndent().trim()
+
+        def idem = UUID.randomUUID().toString()
+        def postReq = HttpRequest.newBuilder()
+                .uri(new URI("${appBaseUrlVal}/api/payments"))
+                .timeout(Duration.ofSeconds(10))
+                .header("Content-Type", "application/json")
+                .header("Idempotency-Key", idem)
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build()
+        def postRes = client.send(postReq, HttpResponse.BodyHandlers.ofString())
+        println "POST /api/payments -> ${postRes.statusCode()}"
+        println postRes.body()
+
+        println "\nTip: tail events -> ./gradlew consumeEvents"
+    }
+}
+
