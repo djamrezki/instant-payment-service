@@ -1,0 +1,13 @@
+.git
+.gitignore
+.gradle
+build
+out
+**/*.iml
+.idea
+.vscode
+.gradle/
+build/
+node_modules/
+Dockerfile
+docker-compose.yml
