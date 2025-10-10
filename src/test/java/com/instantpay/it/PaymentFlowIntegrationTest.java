@@ -1,6 +1,6 @@
 package com.instantpay.it;
 
-import com.instantpay.application.dto.SendPaymentRequest;
+import com.instantpay.adapter.in.web.dto.SendPaymentRequest;
 import com.instantpay.domain.model.PaymentStatus;
 import com.instantpay.domain.port.in.SendPaymentUseCase;
 import org.apache.kafka.clients.consumer.ConsumerConfig;

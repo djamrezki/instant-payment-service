@@ -1,8 +1,8 @@
 package com.instantpay.adapter.in.web;
 
-import com.instantpay.application.dto.PaymentResponse;
-import com.instantpay.application.dto.SendPaymentRequest;
-import com.instantpay.application.mapper.PaymentCommandMapper;
+import com.instantpay.adapter.in.web.dto.PaymentResponse;
+import com.instantpay.adapter.in.web.dto.SendPaymentRequest;
+import com.instantpay.adapter.in.web.mapper.PaymentCommandMapper;
 import com.instantpay.domain.port.in.SendPaymentUseCase;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;

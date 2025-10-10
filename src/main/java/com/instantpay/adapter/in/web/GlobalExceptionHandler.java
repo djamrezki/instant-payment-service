@@ -1,6 +1,6 @@
 package com.instantpay.adapter.in.web;
 
-import com.instantpay.application.dto.ApiError;
+import com.instantpay.adapter.in.web.dto.ApiError;
 import com.instantpay.domain.error.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;

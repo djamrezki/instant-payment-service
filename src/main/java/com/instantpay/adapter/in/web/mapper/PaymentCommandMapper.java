@@ -1,6 +1,6 @@
-package com.instantpay.application.mapper;
+package com.instantpay.adapter.in.web.mapper;
 
-import com.instantpay.application.dto.SendPaymentRequest;
+import com.instantpay.adapter.in.web.dto.SendPaymentRequest;
 import com.instantpay.domain.port.in.SendPaymentUseCase.SendPaymentCommand;
 
 public final class PaymentCommandMapper {

@@ -2,7 +2,7 @@ package com.instantpay.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.instantpay.adapter.in.web.PaymentController;
-import com.instantpay.application.dto.SendPaymentRequest;
+import com.instantpay.adapter.in.web.dto.SendPaymentRequest;
 import com.instantpay.domain.port.in.SendPaymentUseCase;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

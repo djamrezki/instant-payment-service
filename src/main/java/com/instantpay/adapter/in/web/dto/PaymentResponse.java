@@ -1,4 +1,4 @@
-package com.instantpay.application.dto;
+package com.instantpay.adapter.in.web.dto;
 
 import java.util.UUID;
 
