@@ -1,7 +1,9 @@
 package com.instantpay.domain.usecase;
 
+import com.instantpay.domain.error.AccountNotFoundException;
+import com.instantpay.domain.error.InsufficientFundsException;
+import com.instantpay.domain.error.PaymentRejectedException;
 import com.instantpay.domain.model.Payment;
-import com.instantpay.domain.model.PaymentStatus;
 import com.instantpay.domain.model.Transaction;
 import com.instantpay.domain.port.in.SendPaymentUseCase;
 import com.instantpay.domain.port.out.*;
@@ -28,43 +30,32 @@ public class PaymentService implements SendPaymentUseCase {
         this.paymentRepo = paymentRepo;
         this.accountRepo = accountRepo;
         this.txRepo = txRepo;
-        this.clock = clock;
         this.publisherPort = publisherPort;
+        this.clock = clock;
     }
 
     @Override
     @Transactional
     public Result send(SendPaymentCommand cmd) {
-        // 0) Fast validation
+        // 0) Fast validation -> throw domain exceptions (handled by GlobalExceptionHandler)
+        if (cmd.debtorIban() == null || cmd.creditorIban() == null) {
+            throw new PaymentRejectedException("Both debtorIban and creditorIban are required.");
+        }
         if (cmd.debtorIban().equals(cmd.creditorIban())) {
-            // Option A: no payment row at all, just fail
-            return new Result(null, PaymentStatus.FAILED, "SELF_TRANSFER_NOT_ALLOWED");
+            throw new PaymentRejectedException("Self transfer is not allowed.");
         }
         if (cmd.amount() == null || cmd.amount().signum() <= 0) {
-            return new Result(null, PaymentStatus.FAILED, "Amount must be > 0");
+            throw new PaymentRejectedException("Amount must be greater than zero.");
         }
 
-        // 1) Idempotency
+        // 1) Idempotency – return the previously computed outcome (success or otherwise) without error
         var existing = paymentRepo.findByIdempotencyKey(cmd.idempotencyKey());
         if (existing.isPresent()) {
             var p = existing.get();
             return new Result(p.id(), p.status(), "Idempotent replay");
         }
 
-        // 2) Create payment (CREATED)
-        var payment = Payment.newCreated(cmd, clock);
-        try {
-            paymentRepo.save(payment);
-        } catch (Exception uniqueMaybe) {
-            // If another thread inserted concurrently, load and replay
-            var again = paymentRepo.findByIdempotencyKey(cmd.idempotencyKey()).orElseThrow();
-            return new Result(again.id(), again.status(), "Idempotent replay");
-        }
-
-        // Publish CREATED (externalized after tx commits)
-        publisherPort.publishPaymentCreated(payment);
-
-        // 3) Deterministic locking order (avoid deadlocks)
+        // 2) Lock accounts deterministically and validate their existence
         var debtorIban = cmd.debtorIban();
         var creditorIban = cmd.creditorIban();
         var same = debtorIban.equals(creditorIban);
@@ -72,22 +63,34 @@ public class PaymentService implements SendPaymentUseCase {
         var firstIban  = same ? debtorIban : (debtorIban.compareTo(creditorIban) < 0 ? debtorIban : creditorIban);
         var secondIban = same ? debtorIban : (firstIban.equals(debtorIban) ? creditorIban : debtorIban);
 
-        var first  = accountRepo.findByIbanForUpdate(firstIban).orElseThrow();
-        var second = same ? first : accountRepo.findByIbanForUpdate(secondIban).orElseThrow();
+        var first = accountRepo.findByIbanForUpdate(firstIban)
+                .orElseThrow(() -> new AccountNotFoundException("Account not found: " + firstIban));
+        var second = same ? first : accountRepo.findByIbanForUpdate(secondIban)
+                .orElseThrow(() -> new AccountNotFoundException("Account not found: " + secondIban));
 
         // Map back to from/to
         var from = debtorIban.equals(first.iban()) ? first : second;
         var to   = debtorIban.equals(first.iban()) ? second : first;
 
-        // 4) Balance check
+        // 3) Business rule: balance check BEFORE creating/publishing anything
         if (from.balance().compareTo(cmd.amount()) < 0) {
-            payment = payment.failed("INSUFFICIENT_FUNDS", clock);
-            paymentRepo.save(payment);
-            publisherPort.publishPaymentFailed(payment, "INSUFFICIENT_FUNDS");
-            return new Result(payment.id(), payment.status(), "Insufficient funds");
+            throw new InsufficientFundsException("Insufficient balance on source account.");
         }
 
-        // 5) Apply transfer + persist balances + ledger
+        // 4) Create payment (CREATED) – now that we know it can succeed
+        var payment = Payment.newCreated(cmd, clock);
+        try {
+            paymentRepo.save(payment);
+        } catch (Exception uniqueMaybe) {
+            // In case another thread inserted concurrently, load and return as idempotent replay
+            var again = paymentRepo.findByIdempotencyKey(cmd.idempotencyKey()).orElseThrow();
+            return new Result(again.id(), again.status(), "Idempotent replay");
+        }
+
+        // Publish CREATED (after we validated the business preconditions)
+        publisherPort.publishPaymentCreated(payment);
+
+        // 5) Apply transfer: persist new balances + ledger
         var newFrom = from.debit(cmd.amount());
         var newTo   = to.credit(cmd.amount());
         accountRepo.save(newFrom);
@@ -101,7 +104,7 @@ public class PaymentService implements SendPaymentUseCase {
         payment = payment.completed(clock);
         paymentRepo.save(payment);
 
-        // 7) Publish domain event via Modulith (instead of writing into your outbox table)
+        // 7) Publish COMPLETED
         publisherPort.publishPaymentCompleted(payment);
 
         return new Result(payment.id(), payment.status(), "Payment completed");
